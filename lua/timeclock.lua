@@ -768,83 +768,99 @@ function M.weekly_summary()
   vim.cmd("vsplit | buffer " .. buf)
 end
 
+local function csv_escape(s)
+  s = tostring(s or "")
+  return '"' .. s:gsub('"', '""') .. '"'
+end
+
+local function aggregate_for_csv_rows(rows)
+  local groups = {}
+  local group_order = {}
+
+  for _, s in ipairs(rows) do
+    local date = s.date or ""
+    local proj = s.proj or ""
+    local desc = s.desc or ""
+    if desc == "Ongoing session" then
+      desc = ""
+    end
+
+    local group_key = date .. "\31" .. proj
+    local g = groups[group_key]
+    if not g then
+      g = {
+        rows = {},
+        row_by_desc = {},
+        pending_empty = 0.0,
+        has_non_empty = false,
+        last_non_empty_idx = nil,
+      }
+      groups[group_key] = g
+      table.insert(group_order, group_key)
+    end
+
+    if is_empty(desc) then
+      if g.has_non_empty and g.last_non_empty_idx then
+        g.rows[g.last_non_empty_idx].dur = g.rows[g.last_non_empty_idx].dur + s.dur
+      else
+        g.pending_empty = g.pending_empty + s.dur
+      end
+    else
+      local idx = g.row_by_desc[desc]
+      if not idx then
+        table.insert(g.rows, { proj = proj, desc = desc, date = date, dur = 0.0 })
+        idx = #g.rows
+        g.row_by_desc[desc] = idx
+      end
+
+      g.rows[idx].dur = g.rows[idx].dur + s.dur
+      if not g.has_non_empty and g.pending_empty > 0 then
+        g.rows[idx].dur = g.rows[idx].dur + g.pending_empty
+        g.pending_empty = 0.0
+      end
+
+      g.has_non_empty = true
+      g.last_non_empty_idx = idx
+    end
+  end
+
+  local out = {}
+  for _, key in ipairs(group_order) do
+    local g = groups[key]
+    if (not g.has_non_empty) and g.pending_empty > 0 then
+      local date, proj = key:match("^(.*)\31(.*)$")
+      table.insert(g.rows, { proj = proj or "", desc = "", date = date or "", dur = g.pending_empty })
+    end
+    for _, row in ipairs(g.rows) do
+      table.insert(out, row)
+    end
+  end
+
+  return out
+end
+
+function M.export_rows(start_date, end_date)
+  local sessions = apply_time_carry(parse_sessions())
+  if #sessions == 0 then
+    return {}
+  end
+
+  local selected = {}
+  for _, s in ipairs(sessions) do
+    if (not start_date or s.date >= start_date) and (not end_date or s.date <= end_date) then
+      table.insert(selected, s)
+    end
+  end
+
+  return aggregate_for_csv_rows(selected)
+end
+
 function M.export_csv()
   local sessions = apply_time_carry(parse_sessions())
 
   if #sessions == 0 then
     notify("No sessions to export", vim.log.levels.WARN)
     return
-  end
-
-  local function csv_escape(s)
-    s = tostring(s or "")
-    return '"' .. s:gsub('"', '""') .. '"'
-  end
-
-  local function aggregate_for_csv(rows)
-    local groups = {}
-    local group_order = {}
-
-    for _, s in ipairs(rows) do
-      local date = s.date or ""
-      local proj = s.proj or ""
-      local desc = s.desc or ""
-      if desc == "Ongoing session" then
-        desc = ""
-      end
-
-      local group_key = date .. "\31" .. proj
-      local g = groups[group_key]
-      if not g then
-        g = {
-          rows = {},
-          row_by_desc = {},
-          pending_empty = 0.0,
-          has_non_empty = false,
-          last_non_empty_idx = nil,
-        }
-        groups[group_key] = g
-        table.insert(group_order, group_key)
-      end
-
-      if is_empty(desc) then
-        if g.has_non_empty and g.last_non_empty_idx then
-          g.rows[g.last_non_empty_idx].dur = g.rows[g.last_non_empty_idx].dur + s.dur
-        else
-          g.pending_empty = g.pending_empty + s.dur
-        end
-      else
-        local idx = g.row_by_desc[desc]
-        if not idx then
-          table.insert(g.rows, { proj = proj, desc = desc, date = date, dur = 0.0 })
-          idx = #g.rows
-          g.row_by_desc[desc] = idx
-        end
-
-        g.rows[idx].dur = g.rows[idx].dur + s.dur
-        if not g.has_non_empty and g.pending_empty > 0 then
-          g.rows[idx].dur = g.rows[idx].dur + g.pending_empty
-          g.pending_empty = 0.0
-        end
-
-        g.has_non_empty = true
-        g.last_non_empty_idx = idx
-      end
-    end
-
-    local out = {}
-    for _, key in ipairs(group_order) do
-      local g = groups[key]
-      if (not g.has_non_empty) and g.pending_empty > 0 then
-        local date, proj = key:match("^(.*)\31(.*)$")
-        table.insert(g.rows, { proj = proj or "", desc = "", date = date or "", dur = g.pending_empty })
-      end
-      for _, row in ipairs(g.rows) do
-        table.insert(out, row)
-      end
-    end
-
-    return out
   end
 
   local min_date = sessions[1].date
@@ -874,7 +890,7 @@ function M.export_csv()
         end
       end
 
-      local aggregated = aggregate_for_csv(selected)
+      local aggregated = aggregate_for_csv_rows(selected)
       for _, s in ipairs(aggregated) do
         table.insert(lines, string.format("%s,%s,%s,%s", csv_escape(s.proj), csv_escape(s.desc), csv_escape(s.date), csv_escape(string.format("%.2f", s.dur))))
       end

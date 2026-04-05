@@ -1,20 +1,6 @@
 local nvlsp = require("nvchad.configs.lspconfig")
 nvlsp.defaults()
 
-vim.lsp.config("ts_ls", {
-	on_init = nvlsp.on_init,
-	capabilities = nvlsp.capabilities,
-	filetypes = { "javascript", "javascriptreact", "typescript", "typescriptreact" },
-	init_options = {
-		hostInfo = "neovim",
-		preferences = {
-			includeCompletionsForModuleExports = true,
-			includeCompletionsForImportStatements = true,
-			includeCompletionsWithInsertText = true,
-		},
-	},
-})
-
 vim.lsp.enable({ "lua_ls", "html", "cssls", "ts_ls" })
 
 vim.api.nvim_create_autocmd("LspAttach", {

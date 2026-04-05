@@ -156,38 +156,24 @@ return {
           return text:sub(1, max_len - 3) .. "..."
         end
 
-        local function format_line(line)
-          local code, date_s, time_s, text = line:match("^([ioO]) (%d+/%d+/%d+) (%d+:%d+:%d+)%s*(.*)$")
-          if not code then
-            return line
-          end
+        local ok, tc = pcall(require, "timeclock")
+        if not ok or type(tc.export_rows) ~= "function" then
+          return { "Timeclock export rows unavailable" }
+        end
 
-          local tag = "OUT"
-          if code == "i" then
-            tag = "IN "
-          end
-
-          text = (text or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-          if text == "---BREAK---" then
-            tag = "BRK"
-            text = "Break"
-          elseif text == "" then
-            text = "-"
-          end
-
-          return string.format("%s %s %s", date_s:gsub("^%d%d%d%d/", ""), time_s:sub(1, 5), string.format("%-3s %s", tag, shorten(text, 24)))
+        local rows = tc.export_rows()
+        if #rows == 0 then
+          return { "No timelog yet" }
         end
 
         local p = active_profile()
-        local file = timeclock_dir() .. "/timelog-" .. p
-        if vim.fn.filereadable(file) == 0 then
-          return { "No timelog yet" }
-        end
-        local lines = vim.fn.readfile(file)
-        local start = math.max(1, #lines - max_items + 1)
-        local out = { "Profile: " .. p, "MM/DD HH:MM TAG Details" }
-        for i = start, #lines do
-          table.insert(out, format_line(lines[i]))
+        local start = math.max(1, #rows - max_items + 1)
+        local out = { "Profile: " .. p, "Project | Description | Date | Duration" }
+        for i = start, #rows do
+          local row = rows[i]
+          local proj = shorten(row.proj or "", 16)
+          local desc = row.desc and row.desc ~= "" and shorten(row.desc, 18) or "-"
+          table.insert(out, string.format("%s | %s | %s | %.2f", proj, desc, row.date or "", row.dur or 0))
         end
         return out
       end
