@@ -343,6 +343,31 @@ return {
     },
   },
 
+  {
+    "NeogitOrg/neogit",
+    cmd = "Neogit",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-telescope/telescope.nvim",
+      "nvim-tree/nvim-web-devicons",
+    },
+    keys = {
+      {
+        "<leader>gg",
+        function()
+          require("neogit").open()
+        end,
+        desc = "Open Neogit",
+      },
+    },
+    opts = {
+      integrations = {
+        telescope = true,
+      },
+      kind = "tab",
+    },
+  },
+
   -- test new blink
   -- { import = "nvchad.blink.lazyspec" },
 
